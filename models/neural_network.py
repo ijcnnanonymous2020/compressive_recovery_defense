@@ -99,7 +99,20 @@ class NeuralNetwork(object):
 
         # Setup loss 
         self.training_loss = self.get_loss_op(self.logits, self.labels_placeholder)
+        
+        # PGD specific, uncomment marked region when running PGD notebooks
+        #---------Start here --------------
+        #weight_decay = 1e-4
+        #self.decay_loss = self.decay()
+        #self.total_loss = self.training_loss + weight_decay*self.decay_loss
+        #self.train_step = None
 
+        #self.predictions = tf.argmax(self.logits, 1)
+        #self.correct_prediction = tf.equal(self.predictions, tf.argmax(self.labels_placeholder, 1))
+        #self.num_correct = tf.reduce_sum(tf.cast(self.correct_prediction, tf.int64))
+        #self.accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
+        #---------end here---------------
+        
         # Setup gradients 
         self.grad_loss_wrt_param = tf.gradients(self.training_loss, self.params)
         self.grad_loss_wrt_input = tf.gradients(self.training_loss, self.input_placeholder)  
@@ -376,7 +389,43 @@ class NeuralNetwork(object):
 
             self.model.evaluate(self.test_data, self.test_labels, batch_size=self.batch_size)
         
+    def pgd_perturb(self, x_nat, y, rand=True,epsilon=0.15, k=40, a=0.01):
+        """Given a set of examples (x_nat, y), returns a set of adversarial
+           examples within epsilon of x_nat in l_infinity norm."""
+        if rand:
+            x = x_nat + np.random.uniform(-epsilon, epsilon, x_nat.shape)
+            x = np.clip(x, 0, 1) # ensure valid pixel range
+        else:
+            x = np.copy(x_nat)
 
+        for i in range(k):
+            grad = self.get_gradients_wrt_input(x, y)
+
+            x += a * np.sign(grad)
+
+            x = np.clip(x, x_nat - epsilon, x_nat + epsilon) 
+            x = np.clip(x, 0, 1) # ensure valid pixel range
+
+        return x
+    
+    def pgd_perturb_cifar10(self, x_nat, y, rand=True,epsilon=0.015,num_steps=10, step_size=0.00375):
+        """Given a set of examples (x_nat, y), returns a set of adversarial
+           examples within epsilon of x_nat in l_infinity norm."""
+        if rand:
+            x = x_nat + np.random.uniform(-epsilon, epsilon, x_nat.shape)
+            x = np.clip(x, 0, 1) # ensure valid pixel range
+        else:
+            x = np.copy(x_nat)
+
+        for i in range(num_steps):
+            grad = self.get_gradients_wrt_input(x, y)
+
+            x = np.add(x, step_size * np.sign(grad), out=x, casting='unsafe')
+
+            x = np.clip(x, x_nat - epsilon, x_nat + epsilon) 
+            x = np.clip(x, 0, 1) # ensure valid pixel range
+
+        return x
     def get_gradients_wrt_params(self, X, Y):
         """Get gradients of Loss(X,Y) wrt network params"""
         
